@@ -3,10 +3,10 @@
 // Copyright Lionello Lunesu. Placed in the public Domain.
 // https://gist.github.com/lionello/84cad70f835131198fee4ab7e7592fce
 
-import std.stdio : writeln;
+import std.stdio : writeln, File;
 
 int main(string[] args) {
-  import std.process : pipeProcess, wait, Redirect, environment, pipeShell;
+  import std.process : environment, pipeShell, wait, Redirect;
   import std.stdio : stdout;
 
   if (args.length < 2) {
@@ -16,10 +16,18 @@ int main(string[] args) {
   // Check if PAGER is set
   const pager = environment.get("PAGER");
   if (pager != "") {
-    writeln("Using pager: ", pager);
-    // pipe our own output through the pager
-    auto pipes = pipeShell(pager, Redirect.all);
+    auto pagerPipes = pipeShell(pager, Redirect.stdin);
+    scope(exit) {
+      pagerPipes.stdin.close();
+      wait(pagerPipes.pid);
+    }
+    return runStashd(args, pagerPipes.stdin);
   }
+  return runStashd(args, stdout);
+}
+
+private int runStashd(string[] args, File output) {
+  import std.process : pipeProcess, wait, Redirect;
 
   // FIXME: support proper command line arguments
   const filenames = args[1..$];
@@ -31,6 +39,7 @@ int main(string[] args) {
   }
 
   auto pipes = pipeProcess(["git", "stash", "list", "-p"] ~ extraArgs, Redirect.all);
+  scope(exit) wait(pipes.pid);
 
   enum STASH = "stash@{";
   enum DIFF = "diff --git a/";
@@ -48,8 +57,8 @@ int main(string[] args) {
         if (anyMatch(filenames, line[end..$])) {
           // Found a match; print stash header if not yet printed
           if (lastStash) {
-            writeln(lastStash);
-            writeln();
+            output.writeln(lastStash);
+            output.writeln();
             lastStash = null;
           }
           dump = true;
@@ -61,12 +70,10 @@ int main(string[] args) {
       }
     }
     if (dump) {
-      writeln(line);
+      output.writeln(line);
     }
   }
-  // stdout.flush();
-  // stdout.close();
-  return wait(pipes.pid);
+  return 0;
 }
 
 @nogc @safe pure nothrow
