@@ -1,5 +1,5 @@
-stashd: stashd.d
-	ldc2 $< -of=$@
+stashd: stashd.go
+	go build -o $@ $<
 
 .PHONY: install
 install: stashd
